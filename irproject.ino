@@ -149,7 +149,7 @@ void loop() {
 
   server.handleClient();
   MDNS.update();
-  if (nextPing) {
-      irsend.sendNEC(NECPowerToggle);
-  }
+//  if (nextPing) {
+//      irsend.sendNEC(NECPowerToggle);
+//  }
 }
