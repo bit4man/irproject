@@ -2,8 +2,8 @@
 // This code is without warrenty and public domain
 
 #define _IR_ENABLE_DEFAULT_ false
-#define DECODE_NEC true
-#define SEND_NEC true
+#define DECODE_SAMSUNG true
+#define SEND_SAMSUNG true
 
 #include <ESP8266WebServer.h>
 #include <Uri.h>
@@ -13,13 +13,12 @@
 
 #include <PolledTimeout.h>
 #include <Wire.h>
-#include "SSD1306Wire.h" 
 #include <Ticker.h>
 Ticker ticker;
 #include "ircodes.h"
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
-#include <ir_NEC.h>
+#include <ir_Samsung.h>
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 13 // ESP32 DOES NOT DEFINE LED_BUILTIN
@@ -32,40 +31,49 @@ IRsend irsend(IRLED);
 
 ESP8266WebServer server(80);
 
-SSD1306Wire display(0x3c, SDA, SCL); // ADDRESS, SDA, SCL
-// ESP8266/D1 Mini SDA=D2, SCL=D1
-
-int _lineno = 0;
+String inputString = "";
+bool stringComplete = false;
 
 void tick() {
   digitalWrite(LED, !digitalRead(LED));
 }
 
-void announce(String str, int line) {
-  Serial.println(str);
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.setFont(ArialMT_Plain_10);
-  display.drawString(0, 12*line, str);
-}
-
 void announce(String str) {
-  announce(str, _lineno++);
+  // Serial.println(str);
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
-  _lineno=0; display.clear();
   announce("Entered config mode");
-//  announce(WiFi.softAPIP());
+  //announce(WiFi.softAPIP());
   //if you used auto generated SSID, print it
   announce(myWiFiManager->getConfigPortalSSID());
   //entered config mode, make led toggle faster
   ticker.attach(0.2, tick);
-  display.display();
 }
 
-
 void handleRoot() {
-  server.send(200, "text/plain", "hello from esp8266!\r\n");
+  server.send(200, "text/html",
+  "<html>\
+    <body style='background: black; overflow: hidden;'>\
+        <div style='width: 100vw; height: 100vh; display: grid; place-items: center; color: white;'>\
+        Ayyo was good\
+        </br>this post brought to you by @emacs arduino-mode\
+        </br>\
+        <button type='button' onclick='toggleTV();'>Toggle TV</button>\
+        <script>\
+            function toggleTV() {\
+              let xhttp = new XMLHttpRequest();\
+              xhttp.onreadystatechange = function() {\
+                if (this.readyState == 4 && this.status == 200) {\
+                }\
+              };\
+              xhttp.open('POST', 'toggletv', true);\
+              xhttp.send();\
+            };\
+        </script>\
+      </div>\
+     </body>\
+   </html>");
 }
 
 void handleNotFound() {
@@ -83,9 +91,9 @@ void handleNotFound() {
   server.send(404, "text/plain", message);
 }
 
-void turnOff() {
-   irsend.sendNEC(NECPowerToggle);
-   server.send(200, "text/plain", "Sent IR command");
+void toggleTV() {
+   irsend.sendSAMSUNG(SamsungPowerToggle);
+   // Serial.println("Sending toggle IR signal.");
 }
 
 void initWiFi() {
@@ -101,45 +109,58 @@ void initWiFi() {
   wm.setAPCallback(configModeCallback);
 
   if (!wm.autoConnect()) {
-    Serial.println("failed to connect and hit timeout");
+    // Serial.println("failed to connect and hit timeout");
     //reset and try again, or maybe put it to deep sleep
     ESP.restart();
     delay(1000);
   }
 
-  Serial.println("connected...yeey :)");
+  // Serial.println("connected...yeey :)");
   ticker.detach();
-  //keep LED on
-  digitalWrite(LED, LOW);
+  //keep LED off
+  digitalWrite(LED, HIGH);
 
   if (MDNS.begin("remoteoff")) {
-    Serial.println("MDNS responder started");
+    // Serial.println("MDNS responder started");
   }
   server.on("/", handleRoot);
-  server.on("/turnoff", turnOff);
+  server.on("/toggletv", toggleTV);
   server.onNotFound(handleNotFound);
   server.begin();
   
-  _lineno=1;
-  display.clear();
   announce("IR - Connected");
-  display.display();
+}
+
+void handleSerial() {
+  if (Serial.available()) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    inputString = Serial.readString();
+    stringComplete = true;
+  }
+  if (stringComplete) {
+    inputString.trim();
+    if (inputString == "toggle" || inputString == "ߗ") {
+      toggleTV();
+    } else {
+      // Serial.println("Unrecognized command: " + inputString);
+      while (Serial.available() > 0) {
+        Serial.read();
+      }
+   }
+    digitalWrite(LED_BUILTIN, LOW);
+    stringComplete = false;
+    inputString = "";
+  }
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial.println();
+  // Serial.println();
   pinMode(IRLED, OUTPUT); 
 
-  // display
-  display.init();
-  display.flipScreenVertically();
-  display.setFont(ArialMT_Plain_16);
-  display.drawString(5,10, "IR Shutoff");
-  display.display();
-  delay(500);
+  inputString.reserve(200);
 
-  initWiFi();
+  // initWiFi();
   irsend.begin();
 }
 
@@ -147,9 +168,8 @@ void loop() {
   using periodic = esp8266::polledTimeout::periodicMs;
   static periodic nextPing(30000);
 
-  server.handleClient();
-  MDNS.update();
-//  if (nextPing) {
-//      irsend.sendNEC(NECPowerToggle);
-//  }
+  handleSerial();
+
+  // server.handleClient();
+  // MDNS.update();
 }
